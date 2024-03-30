@@ -1,0 +1,230 @@
+---
+title: "Netflix Titles FlexDashboard"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: scroll
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(shiny)
+library(dplyr)
+library(plotly)
+```
+
+```{r data}
+data <- read.csv('Titles_cleaned.csv')
+#Type of Content - Donut Chart
+content_type <- data %>% group_by(type) %>% summarise(
+  count = n()
+)
+
+#To find out the total amount of content produced by each country, strings in country variable and count the total occurrence of each country on its own.
+s <- strsplit(data$country, split = ", ")
+titles_countries <- data.frame(type = rep(data$type, sapply(s, length)), country = unlist(s))
+titles_countries$country <- as.character(gsub(",","",titles_countries$country))
+
+content_type <- na.omit(titles_countries) %>%
+  group_by(country, type) %>%
+  summarise(count = n())
+w <- reshape(data=data.frame(content_type),idvar="country",
+             v.names = "count",
+             timevar = "type",
+             direction="wide") %>% arrange(desc(count.Movie)) %>%
+  top_n(10)
+w
+
+names(w)[2] <- "count_movie"
+names(w)[3] <- "count_tv_show"
+w <- w[order(desc(w$count_movie+w$count_tv_show)),] 
+
+#Growth in content over the years from 2008 to 2020
+
+titles_by_date_full <- data %>% group_by(date_added) %>% 
+  summarise(added_today = n()) %>% 
+  mutate(total_number_of_content = cumsum(added_today), type = "Total")
+
+titles_by_date <- data %>% group_by(date_added, type) %>% 
+  summarise(added_today = n()) %>% 
+  ungroup() %>% 
+  group_by(type) %>%
+  mutate(total_number_of_content = cumsum(added_today))
+
+full_data <- rbind(as.data.frame(titles_by_date_full), as.data.frame(titles_by_date))
+
+
+#Rating Distribution
+titles_rating <- data %>% group_by(data$rating) %>% summarise(count = n())
+
+
+#Genre distribution - Bubble Chart
+titles_genre <- data %>% group_by(data$listed_in) %>% summarise(count =n())
+
+
+#To find out the duration of the movies or TV Shows - Split the original data frame to separate TV shows from Movies
+titles_movie <- data[data$type == 'Movie', ]
+
+titles_tv <- data[data$type == 'TV Show', ]
+
+#Generate graph for duration
+titles_movie_subset <- titles_movie[titles_movie$country %in% 
+                                        c("United States", "India", "United Kingdom",
+                                          "Canada", "France", "Japan", "Spain", "South Korea",
+                                          "Mexico", "Australia", "China", "Taiwan"),]
+
+#TV Show
+titles_show_subset <- titles_tv[titles_tv$country %in%
+                                 c("United States", "India", "United Kingdom",
+                                   "Canada", "France", "Japan", "Spain", "South Korea",
+                                   "Mexico", "Australia", "China", "Taiwan"),]
+
+```
+Page 1 {data-orientation=columns}
+=======================================================================
+Column {data-width=100}
+-----------------------------------------------------------------------
+
+### Donut Chart to show the Amount Of Netflix Content By Type
+
+```{r}
+renderPlotly({
+  plot_ly(content_type, labels = ~type, values = ~count,marker = list(colors = c("#bd3939", "#399ba3"))) %>%
+    add_pie(hole = 0.6) %>%
+    layout(title = 'Amount Of Netflix Content By Type',
+                        xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+                        yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+  
+  
+  
+})
+```
+
+Column {data-width=100}
+-----------------------------------------------------------------------
+
+### Bar Chart to show the Top 11 Countries By The Amount Of The Produced Content
+
+```{r}
+
+renderPlotly({
+  
+  plot_ly(w, x = w$country, y = ~count_movie, type = 'bar', name = 'Movie', marker = list(color = '#bd3939')) %>%
+    add_trace(y = ~count_tv_show, name = 'TV Show',marker = list(color = '#399ba3')) %>%
+    layout(xaxis=list(categoryorder = "array", categoryarray = w$country, title="Country"), yaxis = list(title = 'Amount of content'), barmode = 'stack', title = 'Top 11 Countries By The Amount Of The Produced Content')
+  
+  
+  
+  
+  
+})
+
+```
+Column {data-width=100}
+-----------------------------------------------------------------------
+
+### Line Graph to show the Growth in Netflix Content over the Years 2008-2020
+
+```{r}
+plot_ly(full_data, x = ~date_added, y = ~total_number_of_content, 
+        mode = 'lines', type = 'scatter',
+        color = ~type, colors = c("#bd3939",  "#9addbd", "#399ba3")) %>% 
+  layout(yaxis = list(title = 'Count'), 
+         xaxis = list(title = 'Date'), 
+         title = "Growth in Content over the Years", margin = list(t = 54),
+         legend = list(x = 100, y = 0.5))
+
+```
+
+Page 2 {data-orientation=rows}
+=======================================================================
+Row {data-width=150}
+-----------------------------------------------------------------------
+
+
+### Frequency of TV Show and Movie Ratings
+
+```{r}
+renderPlotly({
+  plot_ly() %>%
+    add_trace(
+    type = 'bar',
+    y = titles_rating$`data$rating`,
+    x = titles_rating$count
+  ) %>%
+    layout(yaxis = list(title = 'Ratings'), xaxis = list(title = 'Count of Content'), title = 'Frequency of TV Show and Movie Ratings')
+  
+  
+  
+})
+```
+
+-----------------------------------------------------------------------
+
+Page 3 {data-orientation=rows}
+=======================================================================
+
+Row {data-height=500}
+-----------------------------------------------------------------------
+
+### Bubble Chart Showing Most Popular Genre
+
+```{r}
+renderPlotly({
+  
+  plot_ly(titles_genre, x = ~titles_genre$`data$listed_in`, y = ~count, text = ~titles_genre$`data$listed_in`, type = 'scatter', mode = 'markers', color = ~count, colors = 'Reds',
+               marker = list(size = ~count, opacity = 0.5)) %>%layout(title = 'Most Popular Genre',
+                      xaxis = list(showgrid = FALSE),
+                      yaxis = list(showgrid = FALSE)) %>%
+    layout(xaxis = list(title = 'Genre'), yaxis = list(title = 'Count of Genres'))
+    
+})
+
+```
+Row {data-height=600}
+-----------------------------------------------------------------------
+
+
+
+Page 4 {data-orientation=rows}
+=======================================================================
+Row {data-height=600}
+-----------------------------------------------------------------------
+
+
+
+
+### Box-Plots of Movie Duration in Top 12 Countries
+
+```{r}
+renderPlotly({
+  plot_ly(titles_movie_subset, y = ~duration, color = ~country, type = "box") %>%
+  layout(xaxis = list(title = "Country"), 
+         yaxis = list(title = 'Duration (in min)'),
+         title = "Box-Plots of Movie Duration in Top 12 Countries", margin = list(t = 54),
+         legend = list(x = 100, y = 0.5))
+  
+  
+  
+  
+})
+
+```
+Row {data-height=600}
+-----------------------------------------------------------------------
+
+### Box-Plots of TV Show Duration in Top 12 Countries
+
+```{r}
+renderPlotly({
+  plot_ly(titles_show_subset, y = ~duration, color = ~country, type = "box") %>%
+  layout(xaxis = list(title = "Country"), 
+         yaxis = list(title = 'Duration (in min)'),
+         title = "Box-Plots of TV Show Duration in Top 12 Countries", margin = list(t = 54),
+         legend = list(x = 100, y = 0.5))
+})
+```
+Row {data-height=600}
+-----------------------------------------------------------------------
+
